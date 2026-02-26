@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Notion Organizer backend (Lambda + API Gateway)
+
+Parameters:
+  NotionToken:
+    Type: String
+    NoEcho: true
+    Description: Notion integration token
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Description: Anthropic API key
+  NotionDatabaseId:
+    Type: String
+    Description: Default Notion database ID
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 90
+    MemorySize: 512
+    Environment:
+      Variables:
+        NOTION_API_VERSION: '2022-06-28'
+
+Resources:
+  NotionOrganizerApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  NotionOrganizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handler.handler
+      Description: API for Notion + AI sync
+      Environment:
+        Variables:
+          NOTION_TOKEN: !Ref NotionToken
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+          NOTION_DATABASE_ID: !Ref NotionDatabaseId
+      Events:
+        ApiProxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref NotionOrganizerApi
+            Path: /api/{proxy+}
+            Method: ANY

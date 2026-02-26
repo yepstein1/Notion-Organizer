@@ -1,0 +1,33 @@
+flowchart TD
+    A[User] -->|Interacts| B[Frontend (React App)]
+    B -->|Sends requests| C[Backend (AWS Lambda)]
+    C -->|Reads/Writes| D[Notion API]
+    C -->|Reads/Writes| E[Local/Cloud Storage]
+    B -->|Displays| F[UI Components]
+    F --> F1[Header]
+    F --> F2[Sidebar]
+    F --> F3[Scratchpad]
+    F --> F4[SetupView]
+    B -->|Uses| G[Hooks/Utils]
+    G --> G1[useScheduledSync]
+    G --> G2[ai-service.js]
+    G --> G3[notion-api.js]
+    G --> G4[storage.js]
+    C -->|Handles| H[handler.js]
+    H -->|Tested by| I[handler.test.js]
+    C -->|Configured by| J[template.yaml, samconfig.toml, env.example.json]
+    B -->|Tested by| K[TestHarness.js]
+    B -->|Entry| L[index.js]
+    C -->|Entry| M[sam build/deploy]
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#bfb,stroke:#333,stroke-width:2px
+    style D fill:#fff,stroke:#333,stroke-width:1px
+    style E fill:#fff,stroke:#333,stroke-width:1px
+    style F fill:#eef,stroke:#333,stroke-width:1px
+    style G fill:#efe,stroke:#333,stroke-width:1px
+    style H fill:#efe,stroke:#333,stroke-width:1px
+    style J fill:#eee,stroke:#333,stroke-width:1px
+    style K fill:#ffe,stroke:#333,stroke-width:1px
+    style L fill:#ffe,stroke:#333,stroke-width:1px
+    style M fill:#ffe,stroke:#333,stroke-width:1px
