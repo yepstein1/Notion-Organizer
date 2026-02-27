@@ -3,8 +3,8 @@
 const API_BASE = process.env.REACT_APP_API_BASE || '';
 
 export const syncNotesWithBackend = async (scratchpadContent, databaseId, options = {}) => {
-  const { maxReviewIterations = 1, skipSync = false } = options;
-  
+  const { maxReviewIterations = 1, skipSync = false, styleExample = null, userFeedback = '', currentPages = null } = options;
+
   const response = await fetch(`${API_BASE}/api/sync`, {
     method: 'POST',
     headers: {
@@ -14,7 +14,10 @@ export const syncNotesWithBackend = async (scratchpadContent, databaseId, option
       scratchpadContent,
       databaseId,
       maxReviewIterations,
-      skipSync
+      skipSync,
+      styleExample,
+      userFeedback,
+      currentPages
     })
   });
 

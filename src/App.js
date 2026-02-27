@@ -4,6 +4,7 @@ import { SetupView } from './components/SetupView';
 import { Header } from './components/Header';
 import { Scratchpad } from './components/Scratchpad';
 import { Sidebar } from './components/Sidebar';
+import { PreviewModal } from './components/PreviewModal';
 import { loadConfig, saveConfig } from './utils/storage';
 import { syncNotesWithBackend, testNotionConnection } from './utils/ai-service';
 import { useScheduledSync } from './hooks/useScheduledSync';
@@ -36,6 +37,14 @@ export default function NotionAIOrganizer() {
 
   // Sync errors for partial failure display
   const [syncErrors, setSyncErrors] = useState([]);
+
+  // Style example for few-shot AI organization
+  const [styleExample, setStyleExample] = useState({ rawNotes: '', organizedOutput: '' });
+  const [showStylePanel, setShowStylePanel] = useState(false);
+
+  // Preview modal state
+  const [previewData, setPreviewData] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Theme
   const [theme, setTheme] = useState('minimal');
@@ -110,6 +119,7 @@ export default function NotionAIOrganizer() {
       setActivityLog(config.activityLog);
       setLastSync(config.lastSync);
       setAutoSyncEnabled(config.autoSyncEnabled);
+      if (config.styleExample) setStyleExample(config.styleExample);
     };
 
     init();
@@ -122,10 +132,11 @@ export default function NotionAIOrganizer() {
         databaseId: databaseId,
         activityLog: activityLog,
         lastSync: lastSync,
-        autoSyncEnabled: autoSyncEnabled
+        autoSyncEnabled: autoSyncEnabled,
+        styleExample: styleExample
       });
     }
-  }, [databaseId, activityLog, lastSync, autoSyncEnabled, isConfigured]);
+  }, [databaseId, activityLog, lastSync, autoSyncEnabled, isConfigured, styleExample]);
 
   // Add log entry
   const addLog = (message, type = 'info') => {
@@ -133,7 +144,7 @@ export default function NotionAIOrganizer() {
     setActivityLog(prev => [...prev, { timestamp, message, type }].slice(-20));
   };
 
-  // Process and sync to Notion
+  // Process notes — always previews first (skipSync: true), then user confirms
   const processAndOrganize = async (additionalIterations = 0) => {
     if (!scratchpadContent.trim()) {
       addLog('No content to process', 'error');
@@ -143,14 +154,46 @@ export default function NotionAIOrganizer() {
     setIsProcessing(true);
     setCanRefine(false);
     setSyncErrors([]);
-    const isRefining = additionalIterations > 0;
-    setProcessingStatus(isRefining ? 'Refining organization...' : 'Fetching knowledge base & organizing notes...');
-    addLog(isRefining ? 'Refining with additional AI review...' : 'Started processing scratchpad notes', 'info');
+    setProcessingStatus('Fetching knowledge base & organizing notes...');
+    addLog('Started processing scratchpad notes', 'info');
 
     try {
       const totalIterations = 1 + additionalIterations;
+      const activeStyleExample = (styleExample.rawNotes && styleExample.organizedOutput) ? styleExample : null;
       const syncResult = await syncNotesWithBackend(scratchpadContent, databaseId, {
-        maxReviewIterations: totalIterations
+        maxReviewIterations: totalIterations,
+        skipSync: true,
+        styleExample: activeStyleExample
+      });
+
+      addLog(`AI organized content (method: ${syncResult.organizationMethod || 'unknown'})`, 'info');
+      setPreviewData(syncResult);
+      setShowPreview(true);
+      setProcessingStatus('');
+
+    } catch (error) {
+      console.error('Processing error:', error);
+      addLog(`Error: ${error.message}`, 'error');
+      setProcessingStatus('');
+      setCanRefine(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Confirm preview and sync to Notion
+  const handleConfirmSync = async () => {
+    if (!previewData) return;
+
+    setIsProcessing(true);
+    setSyncErrors([]);
+    setProcessingStatus('Syncing to Notion...');
+
+    try {
+      const activeStyleExample = (styleExample.rawNotes && styleExample.organizedOutput) ? styleExample : null;
+      const syncResult = await syncNotesWithBackend(scratchpadContent, databaseId, {
+        skipSync: false,
+        styleExample: activeStyleExample
       });
 
       // Track refinement state
@@ -163,7 +206,6 @@ export default function NotionAIOrganizer() {
         setFallbackNotice({
           reason: syncResult.organizationReason || 'No standard documentation structure found for this topic.'
         });
-        // Auto-dismiss after 8 seconds
         setTimeout(() => setFallbackNotice(null), 8000);
       }
 
@@ -190,26 +232,50 @@ export default function NotionAIOrganizer() {
 
       setLastSync(new Date());
       addLog(`Successfully synced ${syncResult.pagesCount || 0} page(s) to Notion`, 'success');
-      
-      // Show hint if further refinement is available
+
       if (syncResult.canRefineMore) {
-        addLog('AI suggests further refinement may improve organization. Click "Refine" to continue.', 'info');
+        addLog('AI suggests further refinement may improve organization.', 'info');
       }
 
-      // Close previous Notion tab if we opened one, then open fresh with cache-busting
+      // Open Notion
       const notionDbUrl = `https://notion.so/${databaseId.replace(/-/g, '')}?refresh=${Date.now()}`;
       if (notionTabRef.current && !notionTabRef.current.closed) {
         notionTabRef.current.close();
       }
       notionTabRef.current = window.open(notionDbUrl, '_blank');
 
+      setShowPreview(false);
+      setPreviewData(null);
       setProcessingStatus('');
 
     } catch (error) {
-      console.error('Processing error:', error);
+      console.error('Sync error:', error);
       addLog(`Error: ${error.message}`, 'error');
       setProcessingStatus('');
-      setCanRefine(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Refine preview with user feedback
+  const handleRefinePreview = async (feedback, currentPages) => {
+    setIsProcessing(true);
+    setProcessingStatus('Refining...');
+
+    try {
+      const syncResult = await syncNotesWithBackend(scratchpadContent, databaseId, {
+        skipSync: true,
+        userFeedback: feedback,
+        currentPages: currentPages
+      });
+
+      setPreviewData(syncResult);
+      setProcessingStatus('');
+
+    } catch (error) {
+      console.error('Refine error:', error);
+      addLog(`Refine error: ${error.message}`, 'error');
+      setProcessingStatus('');
     } finally {
       setIsProcessing(false);
     }
@@ -348,12 +414,26 @@ export default function NotionAIOrganizer() {
               canRefine={canRefine}
               onRefine={handleRefine}
               syncErrors={syncErrors}
+              styleExample={styleExample}
+              setStyleExample={setStyleExample}
+              showStylePanel={showStylePanel}
+              setShowStylePanel={setShowStylePanel}
             />
           </div>
 
           <Sidebar activityLog={activityLog} />
         </div>
       </div>
+
+      {showPreview && previewData && (
+        <PreviewModal
+          previewData={previewData}
+          isProcessing={isProcessing}
+          onRefine={handleRefinePreview}
+          onConfirm={handleConfirmSync}
+          onCancel={() => { setShowPreview(false); setPreviewData(null); }}
+        />
+      )}
     </div>
   );
 }

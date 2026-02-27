@@ -21,7 +21,11 @@ export const Scratchpad = ({
   onSync,
   canRefine = false,
   onRefine,
-  syncErrors = []
+  syncErrors = [],
+  styleExample = { rawNotes: '', organizedOutput: '' },
+  setStyleExample,
+  showStylePanel = false,
+  setShowStylePanel
 }) => {
   const textareaRef = useRef(null);
 
@@ -83,10 +87,121 @@ export const Scratchpad = ({
     <div style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderRadius: '24px', padding: '20px', border: '1px solid rgba(255,255,255,0.5)', boxShadow: '0 8px 32px rgba(102,126,234,0.15)' }}>
       <div className="flex items-center justify-between">
         <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937', margin: 0 }}>Scratchpad</h2>
-        <div style={{ fontSize: '11px', color: '#6b7280' }}>
-          {scratchpadContent.length} characters
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            type="button"
+            onClick={() => setShowStylePanel && setShowStylePanel(v => !v)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              color: '#6b7280',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              borderRadius: '6px'
+            }}
+          >
+            {(styleExample.rawNotes || styleExample.organizedOutput) && (
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#6366f1', display: 'inline-block' }} />
+            )}
+            My Style Example {showStylePanel ? '▴' : '▾'}
+          </button>
+          <div style={{ fontSize: '11px', color: '#6b7280' }}>
+            {scratchpadContent.length} characters
+          </div>
         </div>
       </div>
+
+      {showStylePanel && (
+        <div style={{
+          marginTop: '10px',
+          padding: '14px',
+          borderRadius: '14px',
+          border: '1px solid #e0e7ff',
+          background: '#f8f9ff'
+        }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: '#4f46e5', marginBottom: '10px' }}>
+            Teach the AI your organization style
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Example raw notes
+                </label>
+                {styleExample.rawNotes && (
+                  <button
+                    type="button"
+                    onClick={() => setStyleExample && setStyleExample(s => ({ ...s, rawNotes: '' }))}
+                    style={{ fontSize: '11px', color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={styleExample.rawNotes}
+                onChange={(e) => setStyleExample && setStyleExample(s => ({ ...s, rawNotes: e.target.value }))}
+                placeholder="Paste some rough notes as they'd come from you..."
+                style={{
+                  width: '100%',
+                  minHeight: '80px',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #c7d2fe',
+                  fontSize: '12px',
+                  lineHeight: '1.5',
+                  color: '#374151',
+                  background: '#fff',
+                  resize: 'vertical',
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  How you'd organize them
+                </label>
+                {styleExample.organizedOutput && (
+                  <button
+                    type="button"
+                    onClick={() => setStyleExample && setStyleExample(s => ({ ...s, organizedOutput: '' }))}
+                    style={{ fontSize: '11px', color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={styleExample.organizedOutput}
+                onChange={(e) => setStyleExample && setStyleExample(s => ({ ...s, organizedOutput: e.target.value }))}
+                placeholder="Show the headings and bullets you'd want in Notion..."
+                style={{
+                  width: '100%',
+                  minHeight: '80px',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #c7d2fe',
+                  fontSize: '12px',
+                  lineHeight: '1.5',
+                  color: '#374151',
+                  background: '#fff',
+                  resize: 'vertical',
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div
         style={{

@@ -104,7 +104,7 @@ const findMatchingSection = (headingMap, newHeading) => {
 
 // ─── AI prompts ────────────────────────────────────────────────────────────────
 
-const buildPrompt = (scratchpadContent, existingStructure = {}) => {
+const buildPrompt = (scratchpadContent, existingStructure = {}, styleExample = null) => {
   const hasExisting = Object.keys(existingStructure).length > 0;
   let existingContext = '';
 
@@ -140,11 +140,24 @@ const buildPrompt = (scratchpadContent, existingStructure = {}) => {
       `3. Only add genuinely new information.`;
   }
 
+  let styleExampleBlock = '';
+  if (styleExample && styleExample.rawNotes && styleExample.organizedOutput) {
+    styleExampleBlock = `\n\nORGANIZATION STYLE EXAMPLE (match this user's style):
+
+Example input notes:
+${styleExample.rawNotes}
+
+How the user wants them organized:
+${styleExample.organizedOutput}
+
+Apply the same organizational conventions (section names, grouping logic, level of detail) to the new notes.`;
+  }
+
   return `You are organizing learning notes into a structured knowledge base.
 
 Take these scratchpad notes and organize them:
 
-${scratchpadContent}${existingContext}
+${scratchpadContent}${existingContext}${styleExampleBlock}
 
 STEP 1 - Identify the topic and choose organization strategy:
 - If it's a well-documented technology (React, Python, AWS, etc.), organize content the way its OFFICIAL DOCUMENTATION does
@@ -782,6 +795,9 @@ const handleSync = async (event) => {
   const scratchpadContent = body && body.scratchpadContent;
   const maxReviewIterations = (body && body.maxReviewIterations) || 1;
   const skipSync = body && body.skipSync;
+  const styleExample = (body && body.styleExample) || null;
+  const userFeedback = (body && body.userFeedback) || '';
+  const currentPages = (body && body.currentPages) || null;
 
   if (!token) {
     return jsonResponse(500, { error: 'Missing NOTION_TOKEN in environment' });
@@ -807,6 +823,36 @@ const handleSync = async (event) => {
     });
   }
 
+  // Fast-refine shortcut: if user provided feedback + current pages, skip full pipeline
+  if (userFeedback && currentPages) {
+    let refineText;
+    try {
+      refineText = await callAnthropic(
+        anthropicKey,
+        buildRefinePrompt(scratchpadContent, { pages: currentPages }, userFeedback)
+      );
+    } catch (error) {
+      return jsonResponse(502, { error: 'Anthropic request failed', details: error.message });
+    }
+
+    let refineParsed;
+    try {
+      refineParsed = parseStructuredPages(refineText);
+    } catch (error) {
+      return jsonResponse(502, { error: 'Failed to parse AI response', details: error.message });
+    }
+
+    return jsonResponse(200, {
+      preview: true,
+      pages: refineParsed.pages,
+      organizationMethod: refineParsed.organizationMethod,
+      organizationReason: refineParsed.organizationReason,
+      reviewIterations: 0,
+      canRefineMore: false,
+      reviewFeedback: []
+    });
+  }
+
   // Step 0: Fetch existing page structure so AI can match section names and avoid duplicates
   let existingStructure = {};
   try {
@@ -819,7 +865,7 @@ const handleSync = async (event) => {
   // Step 1: Initial organization
   let aiText;
   try {
-    aiText = await callAnthropic(anthropicKey, buildPrompt(scratchpadContent, existingStructure));
+    aiText = await callAnthropic(anthropicKey, buildPrompt(scratchpadContent, existingStructure, styleExample));
   } catch (error) {
     return jsonResponse(502, { error: 'Anthropic request failed', details: error.message });
   }
