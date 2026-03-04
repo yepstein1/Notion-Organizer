@@ -43,3 +43,6 @@ diagnose-results.txt
 # Coverage
 coverage/
 .vercel
+
+# Claude Code context
+CLAUDE.md

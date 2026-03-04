@@ -1,0 +1,136 @@
+================================================================
+EXAMPLE 1 — React Hooks (single topic, multiple subtopics)
+================================================================
+
+learned about react hooks today
+useState lets you add state to functional components
+const [count, setCount] = useState(0) - initializes count to 0
+useEffect runs after render, can return cleanup function
+useEffect(() => { fetchData() }, []) - empty deps = run once on mount
+useReducer is like useState but for complex state logic
+useReducer takes a reducer function and initial state
+useCallback memoizes a function so it doesn't get recreated every render
+useMemo memoizes a computed value - good for expensive calculations
+useRef gives you a mutable ref that persists across renders
+useRef doesn't trigger re-render when value changes unlike useState
+custom hooks let you extract component logic into reusable functions
+custom hooks must start with "use" prefix
+
+
+================================================================
+EXAMPLE 2 — Mixed topics (biology + programming)
+================================================================
+
+mitochondria are the powerhouse of the cell
+they produce ATP through oxidative phosphorylation
+the electron transport chain is in the inner mitochondrial membrane
+also learned about python decorators today
+@property turns a method into a getter
+@staticmethod doesn't receive self or cls
+@classmethod receives cls as first argument
+DNA replication is semi-conservative
+helicase unwinds the double helix
+primase adds RNA primers
+DNA polymerase adds nucleotides 5' to 3'
+
+
+================================================================
+EXAMPLE 3 — AWS Services (cloud / infrastructure)
+================================================================
+
+S3 stores objects in buckets, each object has a key
+S3 versioning keeps all versions of an object
+S3 lifecycle rules can transition objects to cheaper storage classes
+Lambda runs code without provisioning servers
+Lambda has a 15 minute max timeout
+Lambda cold starts happen when a new execution environment is created
+DynamoDB is a NoSQL key-value and document database
+DynamoDB has on-demand and provisioned capacity modes
+partition key determines which partition stores the item
+sort key allows range queries within a partition
+GSI (global secondary index) lets you query on non-key attributes
+
+
+================================================================
+EXAMPLE 4 — Short quick notes (minimal input)
+================================================================
+
+flexbox: justify-content for main axis, align-items for cross axis
+grid: grid-template-columns defines column tracks
+z-index only works on positioned elements
+position sticky is relative until scroll threshold then fixed
+
+
+================================================================
+EXAMPLE 5 — Detailed with errors/solutions (nested style)
+================================================================
+
+TypeScript generics
+function identity<T>(arg: T): T { return arg }
+makes functions work with any type while keeping type safety
+ran into error TS2322: Type 'string' is not assignable to type 'number'
+  fix: make sure the generic constraint matches the usage
+  or use union types: string | number
+interfaces vs types
+interfaces can be extended with extends keyword
+types use intersection with &
+interfaces support declaration merging, types don't
+mapped types: { [K in keyof T]: boolean } transforms all props to boolean
+conditional types: T extends string ? "yes" : "no"
+the infer keyword extracts types within conditional types
+
+
+================================================================
+EXAMPLE 6 — History / humanities (non-technical)
+================================================================
+
+The French Revolution started in 1789
+storming of the Bastille on July 14 was a major turning point
+the Declaration of the Rights of Man established individual rights
+Reign of Terror 1793-1794 led by Robespierre
+thousands executed by guillotine during this period
+Napoleon rose to power after the revolution
+became First Consul in 1799, Emperor in 1804
+Napoleonic Code standardized French law
+spread revolutionary ideals across Europe through conquest
+Congress of Vienna 1814-1815 tried to restore the old order
+
+
+================================================================
+EXAMPLE 7 — Database concepts (SQL + NoSQL)
+================================================================
+
+SQL joins
+INNER JOIN returns only matching rows from both tables
+LEFT JOIN returns all rows from left + matching from right, NULLs for no match
+FULL OUTER JOIN returns all rows from both, NULLs where no match
+CROSS JOIN is cartesian product of both tables
+normalization reduces data redundancy
+1NF: each column has atomic values
+2NF: no partial dependencies on composite key
+3NF: no transitive dependencies
+indexes speed up reads but slow down writes
+B-tree indexes good for range queries
+hash indexes good for equality lookups
+MongoDB stores documents as BSON
+documents can have nested objects and arrays
+MongoDB uses collections instead of tables
+aggregation pipeline: $match -> $group -> $sort
+
+
+================================================================
+EXAMPLE 8 — Machine Learning basics
+================================================================
+
+supervised learning uses labeled training data
+classification predicts discrete categories (spam/not spam)
+regression predicts continuous values (house prices)
+unsupervised learning finds patterns in unlabeled data
+clustering groups similar data points (k-means, DBSCAN)
+dimensionality reduction: PCA reduces features while preserving variance
+overfitting: model performs well on training data but poorly on new data
+solutions: more training data, regularization, dropout, cross-validation
+underfitting: model too simple to capture patterns
+bias-variance tradeoff: high bias = underfitting, high variance = overfitting
+gradient descent minimizes the loss function
+learning rate too high = overshooting, too low = slow convergence
