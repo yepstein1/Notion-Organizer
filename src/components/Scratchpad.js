@@ -123,8 +123,19 @@ export const Scratchpad = ({
           border: '1px solid #e0e7ff',
           background: '#f8f9ff'
         }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: '#4f46e5', marginBottom: '10px' }}>
-            Teach the AI your organization style
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#4f46e5' }}>
+              Teach the AI your organization style
+            </div>
+            {(styleExample.rawNotes || styleExample.organizedOutput) && (
+              <button
+                type="button"
+                onClick={() => setStyleExample && setStyleExample({ rawNotes: '', organizedOutput: '' })}
+                style={{ fontSize: '11px', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+              >
+                Clear all
+              </button>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div>
@@ -200,6 +211,31 @@ export const Scratchpad = ({
               />
             </div>
           </div>
+          {(() => {
+            const hasRaw = !!styleExample.rawNotes.trim();
+            const hasOrg = !!styleExample.organizedOutput.trim();
+            const bothFilled = hasRaw && hasOrg;
+            const oneFilled = hasRaw || hasOrg;
+            const color = bothFilled ? '#16a34a' : oneFilled ? '#d97706' : '#9ca3af';
+            const bg = bothFilled ? '#f0fdf4' : oneFilled ? '#fffbeb' : '#f3f4f6';
+            const label = bothFilled ? '✓ Autosaved' : oneFilled ? 'Incomplete — fill both fields' : 'Autosaved';
+            return (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color,
+                  background: bg,
+                  border: `1px solid ${color}33`,
+                  borderRadius: '99px',
+                  padding: '2px 10px',
+                  transition: 'all 0.3s ease'
+                }}>
+                  {label}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       )}
 
