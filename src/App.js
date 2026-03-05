@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import TestHarness from './TestHarness';
 import { SetupView } from './components/SetupView';
+import { StylesView } from './components/StylesView';
 import { Header } from './components/Header';
 import { Scratchpad } from './components/Scratchpad';
 import { Sidebar } from './components/Sidebar';
 import { loadConfig, saveConfig } from './utils/storage';
-import { syncNotesWithBackend, testNotionConnection } from './utils/ai-service';
+import { syncNotesWithBackend, testNotionConnection, undoLastSync } from './utils/ai-service';
 import { useScheduledSync } from './hooks/useScheduledSync';
 
 export default function NotionAIOrganizer() {
@@ -36,6 +37,14 @@ export default function NotionAIOrganizer() {
 
   // Sync errors for partial failure display
   const [syncErrors, setSyncErrors] = useState([]);
+
+  // Undo last sync
+  const [lastSyncUndo, setLastSyncUndo] = useState(null);
+
+  // Style preferences — accumulated list
+  const [styleEntries, setStyleEntries] = useState([]);
+  const [showStylePanel, setShowStylePanel] = useState(false);
+
 
   // Theme
   const [theme, setTheme] = useState('minimal');
@@ -110,6 +119,16 @@ export default function NotionAIOrganizer() {
       setActivityLog(config.activityLog);
       setLastSync(config.lastSync);
       setAutoSyncEnabled(config.autoSyncEnabled);
+      if (config.styleEntries) {
+        setStyleEntries(config.styleEntries);
+      } else if (config.styleExample) {
+        // migrate old single-entry shape to array
+        const ex = config.styleExample;
+        const text = ex.description || [ex.rawNotes, ex.organizedOutput].filter(Boolean).join('\n\n');
+        if (text.trim()) {
+          setStyleEntries([{ id: Date.now(), text, addedAt: Date.now() }]);
+        }
+      }
     };
 
     init();
@@ -122,10 +141,11 @@ export default function NotionAIOrganizer() {
         databaseId: databaseId,
         activityLog: activityLog,
         lastSync: lastSync,
-        autoSyncEnabled: autoSyncEnabled
+        autoSyncEnabled: autoSyncEnabled,
+        styleEntries: styleEntries
       });
     }
-  }, [databaseId, activityLog, lastSync, autoSyncEnabled, isConfigured]);
+  }, [databaseId, activityLog, lastSync, autoSyncEnabled, isConfigured, styleEntries]);
 
   // Add log entry
   const addLog = (message, type = 'info') => {
@@ -133,8 +153,8 @@ export default function NotionAIOrganizer() {
     setActivityLog(prev => [...prev, { timestamp, message, type }].slice(-20));
   };
 
-  // Process and sync to Notion
-  const processAndOrganize = async (additionalIterations = 0) => {
+  // Process and sync notes directly to Notion
+  const processAndOrganize = async () => {
     if (!scratchpadContent.trim()) {
       addLog('No content to process', 'error');
       return;
@@ -143,31 +163,25 @@ export default function NotionAIOrganizer() {
     setIsProcessing(true);
     setCanRefine(false);
     setSyncErrors([]);
-    const isRefining = additionalIterations > 0;
-    setProcessingStatus(isRefining ? 'Refining organization...' : 'Fetching knowledge base & organizing notes...');
-    addLog(isRefining ? 'Refining with additional AI review...' : 'Started processing scratchpad notes', 'info');
+    setProcessingStatus('Organizing & syncing to Notion...');
+    addLog('Started processing scratchpad notes', 'info');
 
     try {
-      const totalIterations = 1 + additionalIterations;
+      const activeStyleExample = styleEntries.length > 0 ? { description: styleEntries.map(e => e.text).join('\n') } : null;
       const syncResult = await syncNotesWithBackend(scratchpadContent, databaseId, {
-        maxReviewIterations: totalIterations
+        skipSync: false,
+        styleExample: activeStyleExample
       });
 
-      // Track refinement state
       setCanRefine(syncResult.canRefineMore || false);
       setRefineIterations(syncResult.reviewIterations || 0);
-      addLog(`AI organized content (method: ${syncResult.organizationMethod || 'unknown'}, ${syncResult.reviewIterations || 1} review iteration${(syncResult.reviewIterations || 1) > 1 ? 's' : ''})`, 'success');
+      addLog(`AI organized content (method: ${syncResult.organizationMethod || 'unknown'}, ${syncResult.reviewIterations || 1} iteration${(syncResult.reviewIterations || 1) > 1 ? 's' : ''})`, 'success');
 
-      // Show fallback notification if AI used fallback organization
       if (syncResult.organizationMethod === 'fallback') {
-        setFallbackNotice({
-          reason: syncResult.organizationReason || 'No standard documentation structure found for this topic.'
-        });
-        // Auto-dismiss after 8 seconds
+        setFallbackNotice({ reason: syncResult.organizationReason || 'No standard documentation structure found for this topic.' });
         setTimeout(() => setFallbackNotice(null), 8000);
       }
 
-      // Log per-page results with merge detail
       for (const result of syncResult.results || []) {
         if (result.action === 'created') {
           addLog(`Created new "${result.topic}" page`, 'success');
@@ -189,27 +203,24 @@ export default function NotionAIOrganizer() {
       }
 
       setLastSync(new Date());
+      setLastSyncUndo((syncResult.results || []).map(r => ({
+        action: r.action,
+        topic: r.topic,
+        pageId: r.pageId,
+        backup: r.backup || null
+      })));
       addLog(`Successfully synced ${syncResult.pagesCount || 0} page(s) to Notion`, 'success');
-      
-      // Show hint if further refinement is available
-      if (syncResult.canRefineMore) {
-        addLog('AI suggests further refinement may improve organization. Click "Refine" to continue.', 'info');
-      }
 
-      // Close previous Notion tab if we opened one, then open fresh with cache-busting
       const notionDbUrl = `https://notion.so/${databaseId.replace(/-/g, '')}?refresh=${Date.now()}`;
-      if (notionTabRef.current && !notionTabRef.current.closed) {
-        notionTabRef.current.close();
-      }
+      if (notionTabRef.current && !notionTabRef.current.closed) notionTabRef.current.close();
       notionTabRef.current = window.open(notionDbUrl, '_blank');
 
       setProcessingStatus('');
 
     } catch (error) {
-      console.error('Processing error:', error);
+      console.error('Sync error:', error);
       addLog(`Error: ${error.message}`, 'error');
       setProcessingStatus('');
-      setCanRefine(false);
     } finally {
       setIsProcessing(false);
     }
@@ -217,7 +228,7 @@ export default function NotionAIOrganizer() {
 
   // Handle refine request (run additional review iterations)
   const handleRefine = () => {
-    processAndOrganize(refineIterations + 1);
+    processAndOrganize();
   };
 
   // Test Notion connection
@@ -258,6 +269,41 @@ export default function NotionAIOrganizer() {
   );
 
   // Setup View
+  const handleUndo = async () => {
+    if (!lastSyncUndo) return;
+    setIsProcessing(true);
+    setProcessingStatus('Undoing last sync...');
+    try {
+      await undoLastSync(lastSyncUndo);
+      setLastSyncUndo(null);
+      addLog('Last sync undone successfully', 'info');
+    } catch (error) {
+      addLog(`Undo failed: ${error.message}`, 'error');
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus('');
+    }
+  };
+
+  const handleAddStyleEntry = (text) => {
+    setStyleEntries(prev => [...prev, { id: Date.now(), text, addedAt: Date.now() }]);
+  };
+
+  const handleDeleteStyleEntry = (id) => {
+    setStyleEntries(prev => prev.filter(e => e.id !== id));
+  };
+
+  if (currentView === 'styles') {
+    return (
+      <StylesView
+        styleEntries={styleEntries}
+        onDelete={handleDeleteStyleEntry}
+        onBack={() => setCurrentView('scratchpad')}
+        theme={currentTheme}
+      />
+    );
+  }
+
   if (currentView === 'setup' || !isConfigured) {
     return (
       <SetupView
@@ -348,12 +394,19 @@ export default function NotionAIOrganizer() {
               canRefine={canRefine}
               onRefine={handleRefine}
               syncErrors={syncErrors}
+              onUndo={lastSyncUndo ? handleUndo : null}
+              styleEntries={styleEntries}
+              onAddStyleEntry={handleAddStyleEntry}
+              onOpenStyles={() => setCurrentView('styles')}
+              showStylePanel={showStylePanel}
+              setShowStylePanel={setShowStylePanel}
             />
           </div>
 
           <Sidebar activityLog={activityLog} />
         </div>
       </div>
+
     </div>
   );
 }

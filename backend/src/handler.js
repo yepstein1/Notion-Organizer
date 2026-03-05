@@ -104,7 +104,7 @@ const findMatchingSection = (headingMap, newHeading) => {
 
 // ─── AI prompts ────────────────────────────────────────────────────────────────
 
-const buildPrompt = (scratchpadContent, existingStructure = {}) => {
+const buildPrompt = (scratchpadContent, existingStructure = {}, styleExample = null) => {
   const hasExisting = Object.keys(existingStructure).length > 0;
   let existingContext = '';
 
@@ -140,13 +140,22 @@ const buildPrompt = (scratchpadContent, existingStructure = {}) => {
       `3. Only add genuinely new information.`;
   }
 
+  let styleExampleBlock = '';
+  if (styleExample && styleExample.description && styleExample.description.trim()) {
+    styleExampleBlock = `\n\nUSER STYLE REQUIREMENTS (MANDATORY — these override ALL default instructions including the JSON schema example and formatting steps below):
+${styleExample.description.trim()}
+
+You MUST follow the above requirements even if they contradict the example format or steps below.
+`;
+  }
+
   return `You are organizing learning notes into a structured knowledge base.
 
 Take these scratchpad notes and organize them:
 
-${scratchpadContent}${existingContext}
-
+${scratchpadContent}${existingContext}${styleExampleBlock}
 STEP 1 - Identify the topic and choose organization strategy:
+- If USER STYLE REQUIREMENTS are provided above, apply them faithfully — they take precedence over everything below
 - If it's a well-documented technology (React, Python, AWS, etc.), organize content the way its OFFICIAL DOCUMENTATION does
   - React: Group all hooks together, all components together, etc.
   - Python: Group decorators together, comprehensions together, etc.
@@ -158,8 +167,8 @@ STEP 2 - Group by TYPE, not by purpose:
 - WRONG: Separate sections for "State Management", "Side Effects", "Performance" with hooks scattered
 - CORRECT: One "Hooks" section containing useState, useEffect, useReducer, useCallback together
 
-STEP 3 - Use sub-bullets for related items:
-- When a bullet has related sub-points (like an error with its solutions), nest them
+STEP 3 - Format items according to USER STYLE REQUIREMENTS above (if provided). Otherwise:
+- Use sub-bullets for related items that have parent/child relationships
 - Use simple strings for standalone points, objects with "children" for nested items
 
 Return JSON format:
@@ -173,6 +182,7 @@ Return JSON format:
       "sections": [
         {
           "heading": "Hooks",
+          "itemType": "bullet",
           "bullets": [
             "useState - manages local component state",
             {
@@ -189,6 +199,16 @@ Return JSON format:
     }
   ]
 }
+
+The "itemType" field on each section controls how items are rendered:
+- "bullet" — bulleted list (default)
+- "numbered" — numbered list
+- "paragraph" — plain paragraph text, no list markers
+- "callout" — highlighted callout box with 💡 icon, good for key takeaways or important notes
+- "quote" — indented quote block, good for definitions or cited material
+- "toggle" — collapsible toggle, good for detailed explanations or optional deep-dives (children become the hidden content)
+
+Choose itemType based on the content's purpose and any USER STYLE REQUIREMENTS.
 
 If content spans multiple topics, split into separate pages.`;
 };
@@ -394,35 +414,73 @@ const buildContentBlocks = (sections) => {
       }
     });
 
-    for (const bullet of section.bullets) {
+    const sectionBullets = Array.isArray(section.bullets) ? section.bullets
+      : Array.isArray(section.items) ? section.items
+      : Array.isArray(section.content) ? section.content
+      : [];
+    const sectionType = section.itemType || 'bullet';
+
+    for (const bullet of sectionBullets) {
       const isNested = typeof bullet === 'object' && bullet !== null && bullet.text;
       const bulletText = isNested ? bullet.text : bullet;
 
-      const bulletBlock = {
-        object: 'block',
-        type: 'bulleted_list_item',
-        bulleted_list_item: {
-          rich_text: [{
-            type: 'text',
-            text: { content: bulletText }
-          }]
-        }
-      };
+      let block;
 
-      if (isNested && bullet.children && bullet.children.length > 0) {
-        bulletBlock.bulleted_list_item.children = bullet.children.map(child => ({
+      if (sectionType === 'callout') {
+        block = {
           object: 'block',
-          type: 'bulleted_list_item',
-          bulleted_list_item: {
-            rich_text: [{
-              type: 'text',
-              text: { content: child }
-            }]
+          type: 'callout',
+          callout: {
+            rich_text: [{ type: 'text', text: { content: bulletText } }],
+            icon: { type: 'emoji', emoji: '💡' }
           }
-        }));
+        };
+      } else if (sectionType === 'quote') {
+        block = {
+          object: 'block',
+          type: 'quote',
+          quote: {
+            rich_text: [{ type: 'text', text: { content: bulletText } }]
+          }
+        };
+      } else if (sectionType === 'toggle') {
+        block = {
+          object: 'block',
+          type: 'toggle',
+          toggle: {
+            rich_text: [{ type: 'text', text: { content: bulletText } }],
+            children: isNested && bullet.children?.length > 0
+              ? bullet.children.map(child => ({
+                  object: 'block',
+                  type: 'paragraph',
+                  paragraph: { rich_text: [{ type: 'text', text: { content: child } }] }
+                }))
+              : []
+          }
+        };
+      } else {
+        const notionType = sectionType === 'numbered' ? 'numbered_list_item'
+          : sectionType === 'paragraph' ? 'paragraph'
+          : 'bulleted_list_item';
+
+        block = {
+          object: 'block',
+          type: notionType,
+          [notionType]: {
+            rich_text: [{ type: 'text', text: { content: bulletText } }]
+          }
+        };
+
+        if (isNested && bullet.children?.length > 0 && notionType !== 'paragraph') {
+          block[notionType].children = bullet.children.map(child => ({
+            object: 'block',
+            type: notionType,
+            [notionType]: { rich_text: [{ type: 'text', text: { content: child } }] }
+          }));
+        }
       }
 
-      blocks.push(bulletBlock);
+      blocks.push(block);
     }
   }
 
@@ -719,7 +777,7 @@ const smartAppendToPage = async (token, pageId, sections) => {
     }
   }
 
-  return { bulletsAdded, sectionsCreated, sectionsMerged };
+  return { bulletsAdded, sectionsCreated, sectionsMerged, backup: backupSections };
 };
 
 const createOrUpdatePage = async (token, databaseId, pageData) => {
@@ -734,10 +792,47 @@ const createOrUpdatePage = async (token, databaseId, pageData) => {
     token, databaseId, pageData.topic, pageData.tags || [],
     buildContentBlocks(pageData.sections || [])
   );
-  return { action: 'created', topic: pageData.topic, pageId: newPage.id, pageUrl: newPage.url };
+  return { action: 'created', topic: pageData.topic, pageId: newPage.id, pageUrl: newPage.url, backup: null };
 };
 
 // ─── Route handlers ────────────────────────────────────────────────────────────
+
+const handleUndo = async (event) => {
+  const body = readJsonBody(event);
+  const token = process.env.NOTION_TOKEN;
+  const undoData = body && body.undoData;
+
+  if (!token) return jsonResponse(500, { error: 'Missing NOTION_TOKEN' });
+  if (!Array.isArray(undoData) || undoData.length === 0) return jsonResponse(400, { error: 'Missing undoData' });
+
+  const results = await Promise.allSettled(undoData.map(async (entry) => {
+    if (entry.action === 'created') {
+      // Archive the page that was created
+      await notionFetch(`pages/${entry.pageId}`, token, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived: true })
+      });
+      return { topic: entry.topic, undone: 'deleted' };
+    } else {
+      // Restore previous content: clear current blocks, re-write backup
+      const currentBlocks = await fetchPageBlocks(token, entry.pageId);
+      await Promise.all(currentBlocks.map(b => archiveBlock(token, b.id)));
+      if (entry.backup && entry.backup.length > 0) {
+        await notionFetch(`blocks/${entry.pageId}/children`, token, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ children: buildContentBlocks(entry.backup) })
+        });
+      }
+      return { topic: entry.topic, undone: 'restored' };
+    }
+  }));
+
+  const succeeded = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+  const failed = results.filter(r => r.status === 'rejected').map(r => r.reason?.message);
+  return jsonResponse(200, { succeeded, failed: failed.length > 0 ? failed : undefined });
+};
 
 const handleHealth = () => jsonResponse(200, { status: 'ok' });
 
@@ -782,6 +877,9 @@ const handleSync = async (event) => {
   const scratchpadContent = body && body.scratchpadContent;
   const maxReviewIterations = (body && body.maxReviewIterations) || 1;
   const skipSync = body && body.skipSync;
+  const styleExample = (body && body.styleExample) || null;
+  const userFeedback = (body && body.userFeedback) || '';
+  const currentPages = (body && body.currentPages) || null;
 
   if (!token) {
     return jsonResponse(500, { error: 'Missing NOTION_TOKEN in environment' });
@@ -807,6 +905,36 @@ const handleSync = async (event) => {
     });
   }
 
+  // Fast-refine shortcut: if user provided feedback + current pages, skip full pipeline
+  if (userFeedback && currentPages) {
+    let refineText;
+    try {
+      refineText = await callAnthropic(
+        anthropicKey,
+        buildRefinePrompt(scratchpadContent, { pages: currentPages }, userFeedback)
+      );
+    } catch (error) {
+      return jsonResponse(502, { error: 'Anthropic request failed', details: error.message });
+    }
+
+    let refineParsed;
+    try {
+      refineParsed = parseStructuredPages(refineText);
+    } catch (error) {
+      return jsonResponse(502, { error: 'Failed to parse AI response', details: error.message });
+    }
+
+    return jsonResponse(200, {
+      preview: true,
+      pages: refineParsed.pages,
+      organizationMethod: refineParsed.organizationMethod,
+      organizationReason: refineParsed.organizationReason,
+      reviewIterations: 0,
+      canRefineMore: false,
+      reviewFeedback: []
+    });
+  }
+
   // Step 0: Fetch existing page structure so AI can match section names and avoid duplicates
   let existingStructure = {};
   try {
@@ -819,7 +947,7 @@ const handleSync = async (event) => {
   // Step 1: Initial organization
   let aiText;
   try {
-    aiText = await callAnthropic(anthropicKey, buildPrompt(scratchpadContent, existingStructure));
+    aiText = await callAnthropic(anthropicKey, buildPrompt(scratchpadContent, existingStructure, styleExample));
   } catch (error) {
     return jsonResponse(502, { error: 'Anthropic request failed', details: error.message });
   }
@@ -831,44 +959,22 @@ const handleSync = async (event) => {
     return jsonResponse(502, { error: 'Failed to parse AI response', details: error.message });
   }
 
-  // Step 2: Review and refine loop (default 1 iteration)
-  const reviewResult = await reviewAndRefine(
-    anthropicKey,
-    scratchpadContent,
-    {
-      pages: parsed.pages,
-      organizationMethod: parsed.organizationMethod,
-      organizationReason: parsed.organizationReason
-    },
-    maxReviewIterations
+  const { pages, organizationMethod, organizationReason } = parsed;
+
+  // Step 2: Sync all pages to Notion in parallel
+  const pageResults = await Promise.allSettled(
+    pages.map(page => createOrUpdatePage(token, databaseId, page))
   );
 
-  const { organization, iterationsUsed, canRefineMore, lastReview } = reviewResult;
-  const { pages, organizationMethod, organizationReason } = organization;
-
-  // If skipSync is true, return preview without syncing to Notion
-  if (skipSync) {
-    return jsonResponse(200, {
-      preview: true,
-      pages,
-      organizationMethod,
-      organizationReason,
-      reviewIterations: iterationsUsed,
-      canRefineMore,
-      reviewFeedback: lastReview?.issues || []
-    });
-  }
-
-  // Step 3: Sync to Notion
   const results = [];
   const errors = [];
 
-  for (const page of pages) {
-    try {
-      const result = await createOrUpdatePage(token, databaseId, page);
-      results.push(result);
-    } catch (error) {
-      errors.push({ topic: page.topic, error: error.message });
+  for (let i = 0; i < pageResults.length; i++) {
+    const outcome = pageResults[i];
+    if (outcome.status === 'fulfilled') {
+      results.push(outcome.value);
+    } else {
+      errors.push({ topic: pages[i].topic, error: outcome.reason?.message || 'Unknown error' });
     }
   }
 
@@ -877,10 +983,8 @@ const handleSync = async (event) => {
     pagesCount: results.length,
     organizationMethod,
     organizationReason,
-    reviewIterations: iterationsUsed,
-    canRefineMore,
-    reviewFeedback: lastReview?.issues || [],
-    refinementParsingError: lastReview?.refinementParsingError,
+    reviewIterations: 1,
+    canRefineMore: false,
     errors: errors.length > 0 ? errors : undefined
   });
 };
@@ -907,6 +1011,10 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'POST' && path.endsWith('/api/sync')) {
       return await handleSync(event);
+    }
+
+    if (event.httpMethod === 'POST' && path.endsWith('/api/undo')) {
+      return await handleUndo(event);
     }
 
     return jsonResponse(404, { error: 'Not found' });

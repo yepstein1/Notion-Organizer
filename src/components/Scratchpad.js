@@ -1,17 +1,5 @@
-import React, { useRef } from 'react';
-import {
-  Loader,
-  Send,
-  Bold,
-  Italic,
-  Type,
-  List,
-  ListChecks,
-  Quote,
-  Code,
-  Eraser,
-  RefreshCw
-} from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Loader, Send, RefreshCw, Bold, Italic, Type, List, ListChecks, Quote, Code, Eraser } from 'lucide-react';
 
 export const Scratchpad = ({
   scratchpadContent,
@@ -21,53 +9,43 @@ export const Scratchpad = ({
   onSync,
   canRefine = false,
   onRefine,
-  syncErrors = []
+  syncErrors = [],
+  onUndo = null,
+  styleEntries = [],
+  onAddStyleEntry,
+  onOpenStyles,
+  showStylePanel = false,
+  setShowStylePanel
 }) => {
   const textareaRef = useRef(null);
+  const [newStyleText, setNewStyleText] = useState('');
 
   const applyWrap = (prefix, suffix, placeholder) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const selected = scratchpadContent.slice(start, end) || placeholder;
-    const nextValue =
-      scratchpadContent.slice(0, start) +
-      prefix +
-      selected +
-      suffix +
-      scratchpadContent.slice(end);
-
+    const nextValue = scratchpadContent.slice(0, start) + prefix + selected + suffix + scratchpadContent.slice(end);
     setScratchpadContent(nextValue);
-
     requestAnimationFrame(() => {
       textarea.focus();
       const cursorStart = start + prefix.length;
-      const cursorEnd = cursorStart + selected.length;
-      textarea.setSelectionRange(cursorStart, cursorEnd);
+      textarea.setSelectionRange(cursorStart, cursorStart + selected.length);
     });
   };
 
   const applyLinePrefix = (prefix) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const value = scratchpadContent;
     const lineStart = value.lastIndexOf('\n', start - 1) + 1;
     const lineEndRaw = value.indexOf('\n', end);
     const lineEnd = lineEndRaw === -1 ? value.length : lineEndRaw;
-    const block = value.slice(lineStart, lineEnd);
-    const updatedBlock = block
-      .split('\n')
-      .map((line) => `${prefix}${line}`)
-      .join('\n');
-    const nextValue = value.slice(0, lineStart) + updatedBlock + value.slice(lineEnd);
-
-    setScratchpadContent(nextValue);
-
+    const updatedBlock = value.slice(lineStart, lineEnd).split('\n').map(l => `${prefix}${l}`).join('\n');
+    setScratchpadContent(value.slice(0, lineStart) + updatedBlock + value.slice(lineEnd));
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.setSelectionRange(lineStart, lineStart + updatedBlock.length);
@@ -83,10 +61,108 @@ export const Scratchpad = ({
     <div style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderRadius: '24px', padding: '20px', border: '1px solid rgba(255,255,255,0.5)', boxShadow: '0 8px 32px rgba(102,126,234,0.15)' }}>
       <div className="flex items-center justify-between">
         <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937', margin: 0 }}>Scratchpad</h2>
-        <div style={{ fontSize: '11px', color: '#6b7280' }}>
-          {scratchpadContent.length} characters
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            type="button"
+            onClick={() => setShowStylePanel && setShowStylePanel(v => !v)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              color: '#6b7280',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              borderRadius: '6px'
+            }}
+          >
+            {styleEntries.length > 0 && (
+              <span style={{
+                fontSize: '10px', fontWeight: 700, color: '#fff',
+                background: '#6366f1', borderRadius: '99px', padding: '1px 6px'
+              }}>
+                {styleEntries.length}
+              </span>
+            )}
+            My Style {showStylePanel ? '▴' : '▾'}
+          </button>
+          <div style={{ fontSize: '11px', color: '#6b7280' }}>
+            {scratchpadContent.length} characters
+          </div>
         </div>
       </div>
+
+      {showStylePanel && (
+        <div style={{
+          marginTop: '10px',
+          padding: '14px',
+          borderRadius: '14px',
+          border: '1px solid #e0e7ff',
+          background: '#f8f9ff'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#4f46e5' }}>
+              Add a style preference
+            </div>
+            {styleEntries.length > 0 && (
+              <button
+                type="button"
+                onClick={onOpenStyles}
+                style={{ fontSize: '11px', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', textDecoration: 'underline' }}
+              >
+                Manage {styleEntries.length} saved
+              </button>
+            )}
+          </div>
+          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px', lineHeight: '1.5' }}>
+            Tell the AI how you like your notes organized. Each preference is remembered and applied on every sync.
+          </div>
+          <textarea
+            value={newStyleText}
+            onChange={(e) => setNewStyleText(e.target.value)}
+            placeholder="e.g. Always add a 'Why it matters' sentence after each bullet."
+            style={{
+              width: '100%',
+              minHeight: '72px',
+              padding: '8px 10px',
+              borderRadius: '8px',
+              border: '1px solid #c7d2fe',
+              fontSize: '12px',
+              lineHeight: '1.6',
+              color: '#374151',
+              background: '#fff',
+              resize: 'vertical',
+              outline: 'none',
+              fontFamily: 'inherit',
+              boxSizing: 'border-box'
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+            <button
+              type="button"
+              disabled={!newStyleText.trim()}
+              onClick={() => {
+                if (newStyleText.trim()) {
+                  onAddStyleEntry && onAddStyleEntry(newStyleText.trim());
+                  setNewStyleText('');
+                }
+              }}
+              style={{
+                fontSize: '12px', fontWeight: 600,
+                color: newStyleText.trim() ? '#fff' : '#9ca3af',
+                background: newStyleText.trim() ? '#6366f1' : '#e5e7eb',
+                border: 'none', borderRadius: '8px',
+                padding: '6px 16px', cursor: newStyleText.trim() ? 'pointer' : 'default',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Save preference
+            </button>
+          </div>
+        </div>
+      )}
 
       <div
         style={{
@@ -98,96 +174,24 @@ export const Scratchpad = ({
           boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.04)'
         }}
       >
-        <div
-          style={{
-            position: 'absolute',
-            top: '12px',
-            left: '12px',
-            right: '12px',
-            zIndex: 10,
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: '8px',
-            borderRadius: '12px',
-            border: '1px solid #e0e7ff',
-            backgroundColor: 'rgba(255,255,255,0.95)',
-            padding: '6px 8px',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-          }}
-        >
+        <div style={{ position: 'absolute', top: '12px', left: '12px', right: '12px', zIndex: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', borderRadius: '12px', border: '1px solid #e0e7ff', backgroundColor: 'rgba(255,255,255,0.95)', padding: '6px 8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
           <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9ca3af', padding: '0 8px' }}>Format</span>
-          <button
-            type="button"
-            onClick={() => applyWrap('**', '**', 'bold')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Bold"
-          >
-            <Bold style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyWrap('_', '_', 'italic')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Italic"
-          >
-            <Italic style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyLinePrefix('# ')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Heading"
-          >
-            <Type style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyLinePrefix('- ')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Bulleted list"
-          >
-            <List style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyLinePrefix('- [ ] ')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Checklist"
-          >
-            <ListChecks style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyLinePrefix('> ')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Quote"
-          >
-            <Quote style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyWrap('`', '`', 'code')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Inline code"
-          >
-            <Code style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyWrap('```\n', '\n```', 'code block')}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}
-            aria-label="Code block"
-          >
-            <Code style={{ width: '16px', height: '16px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={clearScratchpad}
-            title="Clear scratchpad"
-            style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#e11d48', cursor: 'pointer' }}
-            aria-label="Clear"
-          >
+          {[
+            { label: 'Bold', icon: <Bold style={{ width: '16px', height: '16px' }} />, action: () => applyWrap('**', '**', 'bold') },
+            { label: 'Italic', icon: <Italic style={{ width: '16px', height: '16px' }} />, action: () => applyWrap('_', '_', 'italic') },
+            { label: 'Heading', icon: <Type style={{ width: '16px', height: '16px' }} />, action: () => applyLinePrefix('# ') },
+            { label: 'List', icon: <List style={{ width: '16px', height: '16px' }} />, action: () => applyLinePrefix('- ') },
+            { label: 'Checklist', icon: <ListChecks style={{ width: '16px', height: '16px' }} />, action: () => applyLinePrefix('- [ ] ') },
+            { label: 'Quote', icon: <Quote style={{ width: '16px', height: '16px' }} />, action: () => applyLinePrefix('> ') },
+            { label: 'Code', icon: <Code style={{ width: '16px', height: '16px' }} />, action: () => applyWrap('`', '`', 'code') },
+          ].map(({ label, icon, action }) => (
+            <button key={label} type="button" onClick={action} aria-label={label}
+              style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#374151', cursor: 'pointer' }}>
+              {icon}
+            </button>
+          ))}
+          <button type="button" onClick={clearScratchpad} title="Clear scratchpad" aria-label="Clear"
+            style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: '8px', border: '1px solid transparent', background: 'transparent', color: '#e11d48', cursor: 'pointer' }}>
             <Eraser style={{ width: '16px', height: '16px' }} />
           </button>
         </div>
@@ -249,6 +253,20 @@ Also learned TypeScript generics today
             </>
           )}
         </button>
+
+        {onUndo && !isProcessing && (
+          <button
+            onClick={onUndo}
+            style={{
+              width: '100%', padding: '10px', borderRadius: '12px',
+              border: '1px solid #fca5a5', background: '#fff1f2',
+              color: '#dc2626', fontWeight: 600, fontSize: '13px',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+            }}
+          >
+            ↩ Undo Last Sync
+          </button>
+        )}
 
         {canRefine && !isProcessing && (
           <button
