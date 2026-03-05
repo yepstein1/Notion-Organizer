@@ -30,6 +30,17 @@ export const syncNotesWithBackend = async (scratchpadContent, databaseId, option
   return data;
 };
 
+export const undoLastSync = async (undoData) => {
+  const response = await fetch(`${API_BASE}/api/undo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ undoData })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Undo failed');
+  return data;
+};
+
 export const testNotionConnection = async (databaseId) => {
   const response = await fetch(`${API_BASE}/api/notion/test`, {
     method: 'POST',
