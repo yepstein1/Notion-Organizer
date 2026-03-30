@@ -6,14 +6,26 @@ Parameters:
   NotionToken:
     Type: String
     NoEcho: true
-    Description: Notion integration token
+    Default: ''
+    Description: Notion integration token (fallback if not using OAuth)
   AnthropicApiKey:
     Type: String
     NoEcho: true
     Description: Anthropic API key
   NotionDatabaseId:
     Type: String
+    Default: ''
     Description: Default Notion database ID
+  NotionClientId:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Notion OAuth client ID
+  NotionClientSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Notion OAuth client secret
 
 Globals:
   Function:
@@ -44,6 +56,10 @@ Resources:
           NOTION_TOKEN: !Ref NotionToken
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
           NOTION_DATABASE_ID: !Ref NotionDatabaseId
+          NOTION_CLIENT_ID: !Ref NotionClientId
+          NOTION_CLIENT_SECRET: !Ref NotionClientSecret
+          ANTHROPIC_MODEL: claude-haiku-4-5-20251001
+          NOTION_TAGS_PROPERTY_TYPE: rich_text
       Events:
         ApiProxy:
           Type: Api

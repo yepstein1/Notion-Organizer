@@ -133,11 +133,13 @@ const buildPrompt = (scratchpadContent, existingStructure = {}, styleExample = n
       }
     }
 
+    const existingPageNames = Object.keys(existingStructure).map(t => `"${t}"`).join(', ');
     existingContext = `\n\nEXISTING KNOWLEDGE BASE:\n${lines.join('\n\n')}\n\n` +
       `IMPORTANT:\n` +
-      `1. Use the EXACT existing section names when content belongs there.\n` +
-      `2. Do NOT suggest content that already appears in the existing bullets above.\n` +
-      `3. Only add genuinely new information.`;
+      `1. EXISTING PAGE NAMES are: ${existingPageNames}. You MUST use the EXACT same page name (topic) if the new content belongs to the same subject. Do NOT invent a new page name for content that fits an existing page.\n` +
+      `2. Use the EXACT existing section names when content belongs there.\n` +
+      `3. Do NOT suggest content that already appears in the existing bullets above.\n` +
+      `4. Only add genuinely new information.`;
   }
 
   let styleExampleBlock = '';
@@ -450,11 +452,14 @@ const buildContentBlocks = (sections) => {
           toggle: {
             rich_text: [{ type: 'text', text: { content: bulletText } }],
             children: isNested && bullet.children?.length > 0
-              ? bullet.children.map(child => ({
-                  object: 'block',
-                  type: 'paragraph',
-                  paragraph: { rich_text: [{ type: 'text', text: { content: child } }] }
-                }))
+              ? bullet.children.map(child => {
+                  const childText = typeof child === 'object' && child !== null ? String(child.text || '') : String(child || '');
+                  return {
+                    object: 'block',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ type: 'text', text: { content: childText } }] }
+                  };
+                })
               : []
           }
         };
@@ -472,11 +477,14 @@ const buildContentBlocks = (sections) => {
         };
 
         if (isNested && bullet.children?.length > 0 && notionType !== 'paragraph') {
-          block[notionType].children = bullet.children.map(child => ({
-            object: 'block',
-            type: notionType,
-            [notionType]: { rich_text: [{ type: 'text', text: { content: child } }] }
-          }));
+          block[notionType].children = bullet.children.map(child => {
+            const childText = typeof child === 'object' && child !== null ? String(child.text || '') : String(child || '');
+            return {
+              object: 'block',
+              type: notionType,
+              [notionType]: { rich_text: [{ type: 'text', text: { content: childText } }] }
+            };
+          });
         }
       }
 
@@ -797,9 +805,46 @@ const createOrUpdatePage = async (token, databaseId, pageData) => {
 
 // ─── Route handlers ────────────────────────────────────────────────────────────
 
+const handleOAuthToken = async (event) => {
+  const body = readJsonBody(event);
+  const code = body && body.code;
+  const redirectUri = body && body.redirectUri;
+
+  const clientId = process.env.NOTION_CLIENT_ID;
+  const clientSecret = process.env.NOTION_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    return jsonResponse(500, { error: 'OAuth not configured on server (missing NOTION_CLIENT_ID or NOTION_CLIENT_SECRET)' });
+  }
+  if (!code) return jsonResponse(400, { error: 'Missing code' });
+  if (!redirectUri) return jsonResponse(400, { error: 'Missing redirectUri' });
+
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const response = await fetch('https://api.notion.com/v1/oauth/token', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ grant_type: 'authorization_code', code, redirect_uri: redirectUri })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    return jsonResponse(400, { error: data.error || 'OAuth token exchange failed', details: data });
+  }
+
+  return jsonResponse(200, {
+    access_token: data.access_token,
+    workspace_name: data.workspace_name,
+    workspace_icon: data.workspace_icon,
+    bot_id: data.bot_id
+  });
+};
+
 const handleUndo = async (event) => {
   const body = readJsonBody(event);
-  const token = process.env.NOTION_TOKEN;
+  const token = (body && body.notionToken) || process.env.NOTION_TOKEN;
   const undoData = body && body.undoData;
 
   if (!token) return jsonResponse(500, { error: 'Missing NOTION_TOKEN' });
@@ -839,7 +884,7 @@ const handleHealth = () => jsonResponse(200, { status: 'ok' });
 const handleTestConnection = async (event) => {
   const body = readJsonBody(event);
   const databaseId = (body && body.databaseId) || process.env.NOTION_DATABASE_ID;
-  const token = process.env.NOTION_TOKEN;
+  const token = (body && body.notionToken) || process.env.NOTION_TOKEN;
 
   if (!token) {
     return jsonResponse(500, { error: 'Missing NOTION_TOKEN in environment' });
@@ -871,7 +916,7 @@ const handleTestConnection = async (event) => {
 
 const handleSync = async (event) => {
   const body = readJsonBody(event);
-  const token = process.env.NOTION_TOKEN;
+  const token = (body && body.notionToken) || process.env.NOTION_TOKEN;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const databaseId = (body && body.databaseId) || process.env.NOTION_DATABASE_ID;
   const scratchpadContent = body && body.scratchpadContent;
@@ -1003,6 +1048,10 @@ exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'GET' && path.endsWith('/api/health')) {
       return handleHealth();
+    }
+
+    if (event.httpMethod === 'POST' && path.endsWith('/api/notion/oauth/token')) {
+      return await handleOAuthToken(event);
     }
 
     if (event.httpMethod === 'POST' && path.endsWith('/api/notion/test')) {

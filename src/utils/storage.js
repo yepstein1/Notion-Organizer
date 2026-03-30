@@ -32,6 +32,8 @@ export const storage = {
 
   // Config keys
   NOTION_DATABASE_ID: 'notion-database-id',
+  NOTION_TOKEN: 'notion-oauth-token',
+  NOTION_WORKSPACE: 'notion-workspace-name',
   ACTIVITY_LOG: 'notion-activity-log',
   LAST_SYNC: 'notion-last-sync',
   AUTO_SYNC_ENABLED: 'notion-auto-sync-enabled',

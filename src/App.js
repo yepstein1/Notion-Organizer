@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import TestHarness from './TestHarness';
 import { SetupView } from './components/SetupView';
+import { OAuthCallback } from './components/OAuthCallback';
 import { StylesView } from './components/StylesView';
 import { Header } from './components/Header';
 import { Scratchpad } from './components/Scratchpad';
 import { Sidebar } from './components/Sidebar';
-import { loadConfig, saveConfig } from './utils/storage';
+import { loadConfig, saveConfig, storage } from './utils/storage';
 import { syncNotesWithBackend, testNotionConnection, undoLastSync } from './utils/ai-service';
 import { useScheduledSync } from './hooks/useScheduledSync';
 
@@ -14,9 +15,22 @@ export default function NotionAIOrganizer() {
   if (window.location.hash === '#/test-harness') {
     return <TestHarness />;
   }
+
+  // OAuth callback route
+  if (window.location.pathname === '/oauth/callback') {
+    return (
+      <OAuthCallback
+        onSuccess={() => { window.location.replace('/'); }}
+        onError={(err) => { console.error('OAuth error:', err); }}
+      />
+    );
+  }
+
   const [currentView, setCurrentView] = useState('setup');
   const [databaseId, setDatabaseId] = useState('');
   const [isConfigured, setIsConfigured] = useState(false);
+  const [notionToken, setNotionToken] = useState(null);
+  const [workspaceName, setWorkspaceName] = useState('');
 
   // Scratchpad
   const [scratchpadContent, setScratchpadContent] = useState('');
@@ -110,10 +124,17 @@ export default function NotionAIOrganizer() {
     const init = async () => {
       const config = await loadConfig();
 
-      if (config.databaseId) {
+      const savedToken = await storage.get(storage.NOTION_TOKEN);
+      const savedWorkspace = await storage.get(storage.NOTION_WORKSPACE);
+      if (savedToken) setNotionToken(savedToken);
+      if (savedWorkspace) setWorkspaceName(savedWorkspace);
+
+      if (config.databaseId && savedToken) {
         setDatabaseId(config.databaseId);
         setIsConfigured(true);
         setCurrentView('scratchpad');
+      } else if (config.databaseId) {
+        setDatabaseId(config.databaseId);
       }
 
       setActivityLog(config.activityLog);
@@ -170,7 +191,8 @@ export default function NotionAIOrganizer() {
       const activeStyleExample = styleEntries.length > 0 ? { description: styleEntries.map(e => e.text).join('\n') } : null;
       const syncResult = await syncNotesWithBackend(scratchpadContent, databaseId, {
         skipSync: false,
-        styleExample: activeStyleExample
+        styleExample: activeStyleExample,
+        notionToken
       });
 
       setCanRefine(syncResult.canRefineMore || false);
@@ -235,13 +257,12 @@ export default function NotionAIOrganizer() {
   const testConnection = async () => {
     setIsProcessing(true);
     try {
-      const success = await testNotionConnection(databaseId);
+      const success = await testNotionConnection(databaseId, notionToken);
 
       if (success) {
         setIsConfigured(true);
         setCurrentView('scratchpad');
         addLog('Successfully connected to Notion!', 'success');
-        // Explicitly save config immediately to ensure persistence
         await saveConfig({
           databaseId: databaseId,
           activityLog: activityLog,
@@ -249,13 +270,22 @@ export default function NotionAIOrganizer() {
           autoSyncEnabled: autoSyncEnabled
         });
       } else {
-        addLog('Failed to connect. Check your database ID and backend credentials.', 'error');
+        addLog('Failed to connect. Check your database ID.', 'error');
       }
     } catch (error) {
       addLog(`Connection error: ${error.message}`, 'error');
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleDisconnect = async () => {
+    await storage.set(storage.NOTION_TOKEN, '');
+    await storage.set(storage.NOTION_WORKSPACE, '');
+    setNotionToken(null);
+    setWorkspaceName('');
+    setIsConfigured(false);
+    setCurrentView('setup');
   };
 
   // Use scheduled sync hook
@@ -274,7 +304,7 @@ export default function NotionAIOrganizer() {
     setIsProcessing(true);
     setProcessingStatus('Undoing last sync...');
     try {
-      await undoLastSync(lastSyncUndo);
+      await undoLastSync(lastSyncUndo, notionToken);
       setLastSyncUndo(null);
       addLog('Last sync undone successfully', 'info');
     } catch (error) {
@@ -311,6 +341,9 @@ export default function NotionAIOrganizer() {
         setDatabaseId={setDatabaseId}
         isProcessing={isProcessing}
         onConnect={testConnection}
+        notionToken={notionToken}
+        workspaceName={workspaceName}
+        onDisconnect={handleDisconnect}
       />
     );
   }
